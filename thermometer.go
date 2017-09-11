@@ -18,10 +18,12 @@ type Thermometer struct {
 }
 
 func NewThermometer(path string) *Thermometer {
-	return &Thermometer{
+	th := Thermometer{
 		path: path,
-		done:   make(chan bool),
+		done: make(chan bool),
 	}
+	th.readTemperature()
+	return &th
 }
 
 func (t *Thermometer) Stop() {
@@ -32,7 +34,7 @@ func (t *Thermometer) Temperature() float64 {
 	return t.temperature
 }
 
-func (t *Thermometer) getTemperature() float64 {
+func (t *Thermometer) readTemperature() float64 {
 	file, err := os.Open(t.path)
 	if err != nil {
 		log.Println(err)
@@ -51,16 +53,15 @@ func (t *Thermometer) getTemperature() float64 {
 	if err != nil {
 		log.Println("Could not convert temperature from device: " + err.Error())
 	}
-
+	t.temperature = celsius
 	return (celsius)
 }
 
 func (t *Thermometer) RunLoop() {
-	t.temperature = t.getTemperature()
 	for {
 		select {
 		case <-time.After(interval):
-			t.temperature = t.getTemperature()
+			t.readTemperature()
 		case <-t.done:
 			break
 		}
