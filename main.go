@@ -12,11 +12,17 @@ func main() {
 	}
 	ppc := NewPoolPumpController(os.Args[1])
 	ppc.Start()
-
-	transport, err := hc.NewIPTransport(hc.Config{Pin: ppc.pin},
-		ppc.thermometer.Accessory,
+	hcConfig := hc.Config{
+		Pin: ppc.pin,
+		StoragePath: "/var/cache/homekit",
+	}
+	transport, err := hc.NewIPTransport(
+		hcConfig,
 		ppc.pump.Accessory,
-		ppc.sweep.Accessory)
+		ppc.sweep.Accessory,
+		ppc.waterTemp.acc.Accessory,
+		ppc.roofTemp.acc.Accessory)
+
 
 	if err != nil {
 		log.Fatal(err)

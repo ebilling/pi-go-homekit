@@ -8,18 +8,41 @@ import (
 	"time"
 )
 
+var mftr = "Bonnie Labs"
+
+type Temp struct {
+	therm *Thermometer
+	acc   *accessory.Thermometer
+}
+
 type PoolPumpController struct {
 	config      Config
 	pump        *accessory.Switch
 	sweep       *accessory.Switch
-	temp        *Thermometer
-	thermometer *accessory.Thermometer
+	waterTemp   *Temp
+	roofTemp    *Temp
 	pin         string
 	done        chan bool
 }
 
+func NewTemp(data Config, key string, name string) *Temp {
+	info := accessory.Info{
+		Name: name,
+		Manufacturer: mftr,
+	}
+	th := NewThermometer(key)
+	t := Temp{
+		therm: th,
+		acc:   accessory.NewTemperatureSensor(info, th.Temperature(), 0.0, 100.0, 1.0),
+	}
+	return &t
+}
+
+func (t *Temp) Update(data *Config) {
+	t.acc.TempSensor.CurrentTemperature.SetValue(t.therm.Update(data))
+}
+
 func NewPoolPumpController(path string) *PoolPumpController {
-	mftr := "Bonnie Labs"
 	config := *NewConfig(path)
 	ppc := PoolPumpController {
 		config:    config,
@@ -54,16 +77,16 @@ func NewPoolPumpController(path string) *PoolPumpController {
 		}
 	})
 
-	tpath, _ := config.Get("path.temperature")
-	ppc.temp = NewThermometer(tpath)
-
-	ppc.thermometer = accessory.NewTemperatureSensor(accessory.Info{
-		Name:         "Pool Temp",
-		Manufacturer: mftr,
-	}, ppc.temp.Temperature(), 0.0, 100.0, 1.0)
+	tpath, exists := config.Get("path.temperature")
+	if !exists {
+		log.Printf("No entry for path.temperature")
+	}
+	tempdata := NewConfig(tpath)
+	ppc.waterTemp = NewTemp(*tempdata, "waterTempC", "Water Temp")
+	ppc.roofTemp = NewTemp(*tempdata, "roofTempC", "Roof Temp")
 
 	ppc.pin, _ = config.Get("homekit.pin")
-	log.Println("Homekit Pin:" + ppc.pin)
+	log.Println("Homekit Pin: " + ppc.pin)
 
 	return &ppc
 }
@@ -80,6 +103,7 @@ func (ppc *PoolPumpController) cmd(command string) {
 		return
 	}
 	defer fifo.Close()
+	log.Println("Writing command")
 	_, err = fifo.WriteString(command + "\n")
 	if err != nil {
 		log.Println("Command Write Error: " + err.Error())
@@ -87,22 +111,27 @@ func (ppc *PoolPumpController) cmd(command string) {
 }
 
 func (ppc *PoolPumpController) turnPumpOn() {
-	ppc.cmd("PUMP_ON")
 	log.Println("Turning Pump On")
+	ppc.cmd("PUMP_ON")
 }
 
 func (ppc *PoolPumpController) turnSweepOn() {
-	ppc.cmd("SWEEP_ON")
 	log.Println("Turning Sweep On")
+	ppc.cmd("SWEEP_ON")
 }
 
 func (ppc *PoolPumpController) turnAllOff() {
-	ppc.cmd("OFF")
 	log.Println("Turning Pumps Off")
+	ppc.cmd("OFF")
 }
 
+//TODO update the temperature in the accessory
 func (ppc *PoolPumpController) Update() {
-	ppc.temp.readTemperature()
+	tdatapath, _ := ppc.config.Get("path.temperature")
+	tdata := NewConfig(tdatapath)
+	ppc.waterTemp.Update(tdata)
+	ppc.roofTemp.Update(tdata)
+
 	path, _ := ppc.config.Get("path.status")
 	file, err := os.Open(path)
 	if err != nil {
@@ -136,13 +165,18 @@ func (ppc *PoolPumpController) Update() {
 
 func (ppc *PoolPumpController) RunLoop() {
 	interval := 5 * time.Second
+	tries := 0
 	for {
+		if tries % 12 == 0 {
+			log.Println("Still Running")
+		}
 		select {
 		case <- time.After(interval):
 			ppc.Update()
 		case <- ppc.done:
 			break
 		}
+		tries++
 	}
 }
 

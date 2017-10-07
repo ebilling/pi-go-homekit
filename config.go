@@ -18,14 +18,14 @@ func NewConfig(path string) *Config {
 		config: make(map[string]interface{})}
 	file, err := os.Open(path)
 	if err != nil {
-		log.Println("Config Open Error: " + err.Error())
+		log.Printf("Config Open Error (%s): %s", path, err.Error())
 		return nil
 	}
 	defer file.Close()
 	decoder := json.NewDecoder(file)
 	err = decoder.Decode(&c.config)
 	if err != nil {
-		log.Println("Config Decode Error: " + err.Error())
+		log.Printf("Config Decode Error (%s): %s", path,  err.Error())
 	}
 	return &c
 }
